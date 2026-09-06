@@ -8,50 +8,48 @@ on:
 jobs:
   convert:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 下载 Cealing-Host.json
         run: |
           curl -o Cealing-Host.json https://gitlab.com/SpaceTimee/Cealing-Host/raw/main/Cealing-Host.json
-          
+
       - name: 转换为 Clash 规则
         run: |
           python3 << 'EOF'
           import json
           import re
-          
+
           with open('Cealing-Host.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
-          
+
           # 提取所有域名
           domains = []
           for item in data:
-              # 每个 item 是 [域名列表, 伪装域名, IP]
               if isinstance(item, list) and len(item) >= 1:
                   domain_list = item[0]
                   if isinstance(domain_list, list):
                       for d in domain_list:
                           if isinstance(d, str) and d:
-                              # 清理域名
                               clean = d.strip()
-                              # 去掉开头的 * 或 $ 或 # 等符号
                               clean = re.sub(r'^[\*\$\#\^]', '', clean)
-                              # 去掉末尾的 ^
                               clean = re.sub(r'\^$', '', clean)
                               if clean:
                                   domains.append(clean)
-          
-          # 去重并排序
+
           domains = sorted(set(domains))
-          
+
           if not domains:
               print("❌ 未提取到域名")
               exit(1)
-          
-          # 生成 Clash rule-provider 格式
+
           with open('cealing-block.yaml', 'w', encoding='utf-8') as f:
               f.write('# 由 GitHub Actions 自动生成\n')
               f.write('# 来源: Cealing-Host\n')
@@ -61,15 +59,17 @@ jobs:
               for domain in domains:
                   if domain:
                       f.write(f'  - "{domain}"\n')
-          
+
           print(f"✅ 成功提取 {len(domains)} 条域名规则")
           print(f"📝 前 10 条: {domains[:10]}")
           EOF
-          
+
       - name: 提交并推送
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add cealing-block.yaml
           git diff --staged --quiet || git commit -m "🤖 自动更新: 转换 Cealing-Host 规则 $(date '+%Y-%m-%d')"
-          git push
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/XANGPIRENNN/clash-rule-generator.git
