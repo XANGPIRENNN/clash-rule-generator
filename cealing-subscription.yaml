@@ -1,0 +1,55 @@
+# ===========================================
+# Cealing-Host Clash 订阅配置
+# 由 GitHub Actions 自动生成
+# 更新时间: 2026-09-06 03:30:46
+# ===========================================
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+
+external-controller: 127.0.0.1:9090
+external-ui: yacd
+
+# ==================== 代理节点 ====================
+# 请在这里填写你的节点
+# 示例：
+# proxies:
+#   - name: "HK-01"
+#     type: vless
+#     server: 1.2.3.4
+#     port: 443
+#     uuid: your-uuid
+#     tls: true
+#     flow: xtls-rprx-vision
+#     servername: www.cloudflare.com
+#     reality-opts:
+#       public-key: your-public-key
+#       short-id: your-short-id
+proxies: []
+
+# ==================== 代理组 ====================
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: []
+  - name: Cealing-Host
+    type: select
+    proxies:
+      - PROXY
+      - DIRECT
+      - REJECT
+
+# ==================== 规则 ====================
+rule-providers:
+  cealing-domains:
+    type: file
+    url: https://raw.githubusercontent.com/XANGPIRENNN/clash-rule-generator/main/cealing-domains.yaml
+    path: ./cealing-domains.yaml
+    interval: 86400
+    behavior: domain
+
+rules:
+  - RULE-SET,cealing-domains,Cealing-Host
+  - MATCH,PROXY
