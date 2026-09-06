@@ -1,0 +1,30 @@
+# SNI 伪装域名参考列表
+# 来源: Cealing-Host
+# 更新时间: 2026-09-06 03:26:52
+# 共 25 个伪装域名
+
+a5.behance.net
+amazon.com
+api.fanbox.cc
+behance.net
+bilibili.tv
+buy.yahoo.com
+claude.ai
+consent.yahoo.com
+ddos-guard.net
+disney.images.edge.bamgrid.com
+disneyplus.com
+fs.quoracdn.net
+g.cn
+guce.yahoo.com
+huggingface.cn
+imgix.net
+netflix.com
+pixeldra.in
+pixivision.net
+spotify.com
+vercel.com
+www.ecosia.org
+www.yahoo.com
+zh.xhamster.com
+zh.xhamster42.desi
