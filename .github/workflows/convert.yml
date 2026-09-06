@@ -1,4 +1,4 @@
-name: 转换 Cealing-Host 为 Clash 配置
+name: 转换 Cealing-Host 为 Clash 订阅
 
 on:
   schedule:
@@ -21,18 +21,17 @@ jobs:
         run: |
           curl -o Cealing-Host.json https://gitlab.com/SpaceTimee/Cealing-Host/raw/main/Cealing-Host.json
 
-      - name: 转换生成多个配置文件
+      - name: 生成完整 Clash 订阅配置
         run: |
           python3 << 'EOF'
           import json
           import re
+          import datetime
 
           with open('Cealing-Host.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
 
-          # ============================================================
-          # 1. 提取域名列表（用于 Clash 规则）
-          # ============================================================
+          # 提取所有域名
           domains = []
           for item in data:
               if isinstance(item, list) and len(item) >= 1:
@@ -48,111 +47,71 @@ jobs:
 
           domains = sorted(set(domains))
 
-          with open('cealing-domains.yaml', 'w', encoding='utf-8') as f:
-              f.write('# 域名规则列表（用于 rule-provider）\n')
-              f.write('# 来源: Cealing-Host\n')
-              f.write('# 更新时间: ' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n')
-              f.write('# 规则数量: ' + str(len(domains)) + '\n\n')
-              f.write('payload:\n')
-              for domain in domains:
-                  if domain:
-                      f.write(f'  - "{domain}"\n')
+          # 生成完整的 Clash 配置文件
+          with open('cealing-subscription.yaml', 'w', encoding='utf-8') as f:
+              f.write('# ===========================================\n')
+              f.write('# Cealing-Host Clash 订阅配置\n')
+              f.write('# 由 GitHub Actions 自动生成\n')
+              f.write('# 更新时间: ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n')
+              f.write('# ===========================================\n\n')
 
-          print(f"✅ 生成 cealing-domains.yaml: {len(domains)} 条域名规则")
+              # 混合端口
+              f.write('mixed-port: 7890\n')
+              f.write('allow-lan: false\n')
+              f.write('mode: rule\n')
+              f.write('log-level: info\n\n')
 
-          # ============================================================
-          # 2. 提取伪装域名（用于节点 servername 参考）
-          # ============================================================
-          servername_list = []
-          for item in data:
-              if isinstance(item, list) and len(item) >= 2:
-                  servername = item[1]
-                  if isinstance(servername, str) and servername and servername.strip():
-                      # 过滤掉纯 IP 或明显不是域名的
-                      if not re.match(r'^\d+\.\d+\.\d+\.\d+$', servername) and not re.match(r'^\[.*\]$', servername):
-                          servername_list.append(servername.strip())
+              # 外部控制
+              f.write('external-controller: 127.0.0.1:9090\n')
+              f.write('external-ui: yacd\n\n')
 
-          servername_list = sorted(set(servername_list))
+              # 代理节点（占位，需要你手动填写或合并）
+              f.write('# ==================== 代理节点 ====================\n')
+              f.write('# 请在这里填写你的节点\n')
+              f.write('# 示例：\n')
+              f.write('# proxies:\n')
+              f.write('#   - name: "HK-01"\n')
+              f.write('#     type: vless\n')
+              f.write('#     server: 1.2.3.4\n')
+              f.write('#     port: 443\n')
+              f.write('#     uuid: your-uuid\n')
+              f.write('#     tls: true\n')
+              f.write('#     flow: xtls-rprx-vision\n')
+              f.write('#     servername: www.cloudflare.com\n')
+              f.write('#     reality-opts:\n')
+              f.write('#       public-key: your-public-key\n')
+              f.write('#       short-id: your-short-id\n')
+              f.write('proxies: []\n\n')
 
-          with open('cealing-servername.txt', 'w', encoding='utf-8') as f:
-              f.write('# SNI 伪装域名参考列表\n')
-              f.write('# 来源: Cealing-Host\n')
-              f.write('# 更新时间: ' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n')
-              f.write('# 共 ' + str(len(servername_list)) + ' 个伪装域名\n\n')
-              for name in servername_list:
-                  f.write(name + '\n')
+              # 代理组
+              f.write('# ==================== 代理组 ====================\n')
+              f.write('proxy-groups:\n')
+              f.write('  - name: PROXY\n')
+              f.write('    type: select\n')
+              f.write('    proxies: []\n')
+              f.write('  - name: Cealing-Host\n')
+              f.write('    type: select\n')
+              f.write('    proxies:\n')
+              f.write('      - PROXY\n')
+              f.write('      - DIRECT\n')
+              f.write('      - REJECT\n\n')
 
-          print(f"✅ 生成 cealing-servername.txt: {len(servername_list)} 个伪装域名")
-
-          # ============================================================
-          # 3. 提取伪装 IP（用于 Clash DNS hosts）
-          # ============================================================
-          hosts_dict = {}
-          for item in data:
-              if isinstance(item, list) and len(item) >= 3:
-                  ip = item[2]
-                  if isinstance(ip, str) and ip and ip.strip():
-                      # 过滤掉空字符串、域名格式、IPv6地址（可选保留）
-                      # 只保留 IPv4 地址
-                      if re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
-                          # 获取对应的域名列表
-                          domain_list = item[0]
-                          if isinstance(domain_list, list):
-                              for d in domain_list:
-                                  if isinstance(d, str) and d:
-                                      clean = d.strip()
-                                      clean = re.sub(r'^[\*\$\#\^]', '', clean)
-                                      clean = re.sub(r'\^$', '', clean)
-                                      if clean and clean not in hosts_dict:
-                                          hosts_dict[clean] = ip
-
-          with open('cealing-hosts.txt', 'w', encoding='utf-8') as f:
-              f.write('# DNS hosts 配置（用于 Clash DNS hosts）\n')
-              f.write('# 来源: Cealing-Host\n')
-              f.write('# 更新时间: ' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n')
-              f.write('# 共 ' + str(len(hosts_dict)) + ' 条 hosts 记录\n\n')
-              f.write('# 使用方法：复制以下内容到 Clash 配置的 dns.hosts 部分\n\n')
-              for domain, ip in sorted(hosts_dict.items()):
-                  f.write(f'{domain}: {ip}\n')
-
-          print(f"✅ 生成 cealing-hosts.txt: {len(hosts_dict)} 条 hosts 记录")
-
-          # ============================================================
-          # 4. 生成汇总信息
-          # ============================================================
-          with open('README.md', 'w', encoding='utf-8') as f:
-              f.write('# Cealing-Host 转换产物\n\n')
-              f.write('由 GitHub Actions 自动转换生成\n\n')
-              f.write('## 📦 文件说明\n\n')
-              f.write('| 文件 | 用途 | 数量 |\n')
-              f.write('| :--- | :--- | :--- |\n')
-              f.write(f'| cealing-domains.yaml | Clash rule-provider 域名规则 | {len(domains)} 条 |\n')
-              f.write(f'| cealing-servername.txt | SNI 伪装域名参考列表 | {len(servername_list)} 个 |\n')
-              f.write(f'| cealing-hosts.txt | Clash DNS hosts 配置 | {len(hosts_dict)} 条 |\n\n')
-              f.write('## 🔧 使用方法\n\n')
-              f.write('### 1. 域名规则（rule-provider）\n\n')
-              f.write('```yaml\n')
+              # 规则提供者
+              f.write('# ==================== 规则 ====================\n')
               f.write('rule-providers:\n')
-              f.write('  cealing-block:\n')
+              f.write('  cealing-domains:\n')
               f.write('    type: file\n')
               f.write('    url: https://raw.githubusercontent.com/XANGPIRENNN/clash-rule-generator/main/cealing-domains.yaml\n')
               f.write('    path: ./cealing-domains.yaml\n')
               f.write('    interval: 86400\n')
               f.write('    behavior: domain\n\n')
-              f.write('rules:\n')
-              f.write('  - RULE-SET,cealing-block,PROXY  # 走代理节点\n')
-              f.write('```\n\n')
-              f.write('### 2. DNS hosts（Clash 配置）\n\n')
-              f.write('```yaml\n')
-              f.write('dns:\n')
-              f.write('  enable: true\n')
-              f.write('  hosts:\n')
-              f.write('    # 从 cealing-hosts.txt 复制内容到这里\n')
-              f.write('```\n\n')
-              f.write('### 3. SNI 伪装域名参考\n\n')
-              f.write('`cealing-servername.txt` 中的域名可用于 Reality 节点的 `servername` 配置。\n')
 
-          print("✅ 生成 README.md")
+              f.write('rules:\n')
+              f.write('  - RULE-SET,cealing-domains,Cealing-Host\n')
+              f.write('  - MATCH,PROXY\n')
+
+          print(f"✅ 生成 cealing-subscription.yaml（完整订阅配置）")
+          print(f"📝 包含 {len(domains)} 条域名规则")
 
           EOF
 
@@ -162,6 +121,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add cealing-domains.yaml cealing-servername.txt cealing-hosts.txt README.md
-          git diff --staged --quiet || git commit -m "🤖 自动更新: 转换 Cealing-Host 全部数据 $(date '+%Y-%m-%d')"
+          git add cealing-subscription.yaml
+          git diff --staged --quiet || git commit -m "🤖 自动更新: 生成 Clash 订阅配置 $(date '+%Y-%m-%d')"
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/XANGPIRENNN/clash-rule-generator.git
