@@ -17,6 +17,14 @@ jobs:
         run: |
           curl -o Cealing-Host.json https://gitlab.com/SpaceTimee/Cealing-Host/raw/main/Cealing-Host.json
           
+      - name: 查看 JSON 结构（调试）
+        run: |
+          echo "=== 查看 JSON 前 20 行 ==="
+          head -20 Cealing-Host.json
+          echo ""
+          echo "=== 查看 JSON 的 keys ==="
+          python3 -c "import json; data=json.load(open('Cealing-Host.json')); print('Keys:', list(data.keys())); print('Type:', type(data)); print('First 3 items:', dict(list(data.items())[:3]) if isinstance(data, dict) else 'not dict')"
+          
       - name: 转换为 Clash 规则
         run: |
           python3 << 'EOF'
@@ -25,28 +33,52 @@ jobs:
           with open('Cealing-Host.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
           
-          # 打印 JSON 结构，确认字段名
-          print("JSON keys:", list(data.keys()))
+          # 打印完整结构用于调试
+          print("数据类型:", type(data))
+          if isinstance(data, dict):
+              print("所有 key:", list(data.keys()))
           
-          # 尝试提取域名（根据实际结构调整）
+          # 智能提取域名列表
           domains = []
-          if 'domains' in data:
-              domains = data['domains']
-          elif 'rules' in data:
-              domains = data['rules']
-          elif 'payload' in data:
-              domains = data['payload']
-          else:
-              # 如果是列表直接就是域名
-              if isinstance(data, list):
-                  domains = data
-              else:
-                  # 遍历所有值找列表
+          
+          # 尝试多种可能的字段名
+          if isinstance(data, dict):
+              # 常见字段名
+              for key in ['domains', 'rules', 'payload', 'data', 'list', 'hosts', 'domain', 'blocklist', 'hosts_list']:
+                  if key in data and isinstance(data[key], list):
+                      domains = data[key]
+                      print(f"✅ 从字段 '{key}' 提取到 {len(domains)} 条")
+                      break
+              
+              # 如果还没找到，遍历所有值
+              if not domains:
                   for key, value in data.items():
                       if isinstance(value, list) and len(value) > 0:
                           if isinstance(value[0], str):
                               domains = value
+                              print(f"✅ 从字段 '{key}' 提取到 {len(domains)} 条")
                               break
+          elif isinstance(data, list):
+              domains = data
+              print(f"✅ 数据本身是列表，共 {len(domains)} 条")
+          
+          # 如果 domains 是字典列表，提取特定字段
+          if domains and isinstance(domains[0], dict):
+              print("⚠️ 域名列表是字典格式，尝试提取...")
+              # 尝试常见字段名
+              for key in ['domain', 'host', 'name', 'rule']:
+                  if key in domains[0]:
+                      domains = [item[key] for item in domains if key in item]
+                      print(f"✅ 从字典中提取 '{key}' 字段，共 {len(domains)} 条")
+                      break
+          
+          # 过滤空值
+          domains = [d for d in domains if d]
+          
+          if not domains:
+              print("❌ 未找到域名列表！请检查 JSON 结构")
+              print("原始数据前 500 字符:", str(data)[:500])
+              exit(1)
           
           # 生成 Clash rule-provider 格式
           with open('cealing-block.yaml', 'w', encoding='utf-8') as f:
@@ -56,8 +88,10 @@ jobs:
               f.write('payload:\n')
               for domain in domains:
                   if isinstance(domain, str):
-                      clean_domain = domain.replace('*.', '')
-                      f.write(f'  - "{clean_domain}"\n')
+                      # 去掉可能的 *. 和通配符
+                      clean_domain = domain.replace('*.', '').replace('*', '').strip()
+                      if clean_domain:
+                          f.write(f'  - "{clean_domain}"\n')
           
           print(f"✅ 成功转换 {len(domains)} 条规则")
           EOF
