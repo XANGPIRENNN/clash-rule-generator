@@ -17,83 +17,53 @@ jobs:
         run: |
           curl -o Cealing-Host.json https://gitlab.com/SpaceTimee/Cealing-Host/raw/main/Cealing-Host.json
           
-      - name: 查看 JSON 结构（调试）
-        run: |
-          echo "=== 查看 JSON 前 20 行 ==="
-          head -20 Cealing-Host.json
-          echo ""
-          echo "=== 查看 JSON 的 keys ==="
-          python3 -c "import json; data=json.load(open('Cealing-Host.json')); print('Keys:', list(data.keys())); print('Type:', type(data)); print('First 3 items:', dict(list(data.items())[:3]) if isinstance(data, dict) else 'not dict')"
-          
       - name: 转换为 Clash 规则
         run: |
           python3 << 'EOF'
           import json
+          import re
           
           with open('Cealing-Host.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
           
-          # 打印完整结构用于调试
-          print("数据类型:", type(data))
-          if isinstance(data, dict):
-              print("所有 key:", list(data.keys()))
-          
-          # 智能提取域名列表
+          # 提取所有域名
           domains = []
+          for item in data:
+              # 每个 item 是 [域名列表, 伪装域名, IP]
+              if isinstance(item, list) and len(item) >= 1:
+                  domain_list = item[0]
+                  if isinstance(domain_list, list):
+                      for d in domain_list:
+                          if isinstance(d, str) and d:
+                              # 清理域名
+                              clean = d.strip()
+                              # 去掉开头的 * 或 $ 或 # 等符号
+                              clean = re.sub(r'^[\*\$\#\^]', '', clean)
+                              # 去掉末尾的 ^
+                              clean = re.sub(r'\^$', '', clean)
+                              if clean:
+                                  domains.append(clean)
           
-          # 尝试多种可能的字段名
-          if isinstance(data, dict):
-              # 常见字段名
-              for key in ['domains', 'rules', 'payload', 'data', 'list', 'hosts', 'domain', 'blocklist', 'hosts_list']:
-                  if key in data and isinstance(data[key], list):
-                      domains = data[key]
-                      print(f"✅ 从字段 '{key}' 提取到 {len(domains)} 条")
-                      break
-              
-              # 如果还没找到，遍历所有值
-              if not domains:
-                  for key, value in data.items():
-                      if isinstance(value, list) and len(value) > 0:
-                          if isinstance(value[0], str):
-                              domains = value
-                              print(f"✅ 从字段 '{key}' 提取到 {len(domains)} 条")
-                              break
-          elif isinstance(data, list):
-              domains = data
-              print(f"✅ 数据本身是列表，共 {len(domains)} 条")
-          
-          # 如果 domains 是字典列表，提取特定字段
-          if domains and isinstance(domains[0], dict):
-              print("⚠️ 域名列表是字典格式，尝试提取...")
-              # 尝试常见字段名
-              for key in ['domain', 'host', 'name', 'rule']:
-                  if key in domains[0]:
-                      domains = [item[key] for item in domains if key in item]
-                      print(f"✅ 从字典中提取 '{key}' 字段，共 {len(domains)} 条")
-                      break
-          
-          # 过滤空值
-          domains = [d for d in domains if d]
+          # 去重并排序
+          domains = sorted(set(domains))
           
           if not domains:
-              print("❌ 未找到域名列表！请检查 JSON 结构")
-              print("原始数据前 500 字符:", str(data)[:500])
+              print("❌ 未提取到域名")
               exit(1)
           
           # 生成 Clash rule-provider 格式
           with open('cealing-block.yaml', 'w', encoding='utf-8') as f:
               f.write('# 由 GitHub Actions 自动生成\n')
               f.write('# 来源: Cealing-Host\n')
-              f.write('# 更新时间: ' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n\n')
+              f.write('# 更新时间: ' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n')
+              f.write('# 规则数量: ' + str(len(domains)) + '\n\n')
               f.write('payload:\n')
               for domain in domains:
-                  if isinstance(domain, str):
-                      # 去掉可能的 *. 和通配符
-                      clean_domain = domain.replace('*.', '').replace('*', '').strip()
-                      if clean_domain:
-                          f.write(f'  - "{clean_domain}"\n')
+                  if domain:
+                      f.write(f'  - "{domain}"\n')
           
-          print(f"✅ 成功转换 {len(domains)} 条规则")
+          print(f"✅ 成功提取 {len(domains)} 条域名规则")
+          print(f"📝 前 10 条: {domains[:10]}")
           EOF
           
       - name: 提交并推送
