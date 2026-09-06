@@ -1,0 +1,71 @@
+name: 转换 Cealing-Host 为 Clash 规则
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        
+      - name: 下载 Cealing-Host.json
+        run: |
+          curl -o Cealing-Host.json https://gitlab.com/SpaceTimee/Cealing-Host/raw/main/Cealing-Host.json
+          
+      - name: 转换为 Clash 规则
+        run: |
+          python3 << 'EOF'
+          import json
+          
+          with open('Cealing-Host.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+          
+          # 打印 JSON 结构，确认字段名
+          print("JSON keys:", list(data.keys()))
+          
+          # 尝试提取域名（根据实际结构调整）
+          domains = []
+          if 'domains' in data:
+              domains = data['domains']
+          elif 'rules' in data:
+              domains = data['rules']
+          elif 'payload' in data:
+              domains = data['payload']
+          else:
+              # 如果是列表直接就是域名
+              if isinstance(data, list):
+                  domains = data
+              else:
+                  # 遍历所有值找列表
+                  for key, value in data.items():
+                      if isinstance(value, list) and len(value) > 0:
+                          if isinstance(value[0], str):
+                              domains = value
+                              break
+          
+          # 生成 Clash rule-provider 格式
+          with open('cealing-block.yaml', 'w', encoding='utf-8') as f:
+              f.write('# 由 GitHub Actions 自动生成\n')
+              f.write('# 来源: Cealing-Host\n')
+              f.write('# 更新时间: ' + __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n\n')
+              f.write('payload:\n')
+              for domain in domains:
+                  if isinstance(domain, str):
+                      clean_domain = domain.replace('*.', '')
+                      f.write(f'  - "{clean_domain}"\n')
+          
+          print(f"✅ 成功转换 {len(domains)} 条规则")
+          EOF
+          
+      - name: 提交并推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cealing-block.yaml
+          git diff --staged --quiet || git commit -m "🤖 自动更新: 转换 Cealing-Host 规则 $(date '+%Y-%m-%d')"
+          git push
